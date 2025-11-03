@@ -246,8 +246,8 @@ func TestExecuteCommand_CommandWithStderr(t *testing.T) {
 		t.Errorf("Expected result to contain 'stderr', got %q", result)
 	}
 
-	if !strings.Contains(result, "--- stderr ---") {
-		t.Errorf("Expected result to contain '--- stderr ---', got %q", result)
+	if !strings.Contains(result, "---") {
+		t.Errorf("Expected result to contain separator '---', got %q", result)
 	}
 }
 
@@ -286,8 +286,8 @@ func TestExecuteCommand_ExecutionTime(t *testing.T) {
 		t.Errorf("Expected result to contain execution time with 'ms', got %q", result)
 	}
 
-	// Should contain the time in the format "_success X.XXms_" or "_error X.XXms_"
-	if !strings.Contains(result, "_") {
-		t.Errorf("Expected result to contain '_' for italic formatting, got %q", result)
+	// Should contain the separator "---" before status
+	if !strings.Contains(result, "---") {
+		t.Errorf("Expected result to contain separator '---', got %q", result)
 	}
 }

@@ -28,7 +28,7 @@ Example response:
 ```json
 {
     "response_type": "in_channel",
-    "text": "$ echo 'hi'\n\n```\nhi\n```\n\n_success 1.63ms_\n"
+    "text": "```\n$ date\nMon Nov  3 14:49:51 UTC 2025\n---\nsuccess 1.60ms\n```\n"
 }
 ```
 

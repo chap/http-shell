@@ -105,18 +105,30 @@ func executeCommand(command, originalText string) string {
 	// Calculate execution time
 	duration := time.Since(startTime)
 
-	// Prepare output
+	// Prepare output - all inside code block
 	var result bytes.Buffer
-	result.WriteString(originalText)
-	result.WriteString("\n\n")
 	result.WriteString("```\n")
+	result.WriteString(originalText)
+	result.WriteString("\n")
+
+	// Write stdout
 	result.Write(stdout.Bytes())
+
+	// Write stderr the same way (no special separator)
 	if stderr.Len() > 0 {
-		result.WriteString("\n--- stderr ---\n")
 		result.Write(stderr.Bytes())
 	}
-	result.WriteString("```\n\n")
-	result.WriteString(fmt.Sprintf("_%s %.2fms_\n", translateExitCode(exitCode), float64(duration.Nanoseconds())/1e6))
+
+	// Remove trailing newline from output if present, then add separator and status
+	outputBytes := result.Bytes()
+	if len(outputBytes) > 0 && outputBytes[len(outputBytes)-1] == '\n' {
+		result.Reset()
+		result.Write(outputBytes[:len(outputBytes)-1])
+	}
+
+	result.WriteString("\n---\n")
+	result.WriteString(fmt.Sprintf("%s %.2fms\n", translateExitCode(exitCode), float64(duration.Nanoseconds())/1e6))
+	result.WriteString("```\n")
 
 	return result.String()
 }
