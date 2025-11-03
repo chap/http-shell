@@ -241,7 +241,7 @@ func postInitialMessage(token, channelID, userID, teamID, command string) (strin
 	data.Set("token", token)
 	data.Set("channel", channelID)
 	// Tag user and show command
-	messageText := fmt.Sprintf("<@%s> Starting sandbox...\n```\n%s\n```", userID, command)
+	messageText := fmt.Sprintf("<@%s> starting sandbox `%s`...\n", userID, command, command)
 	data.Set("text", messageText)
 
 	req, err := http.NewRequest("POST", slackAPIBaseURL+"/chat.postMessage", strings.NewReader(data.Encode()))
