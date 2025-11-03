@@ -30,8 +30,7 @@ Example response:
 output from command
 ```
 
-Process completed
-_Exit code: 0 | Execution time: 1.63ms_
+exit: 0 | 1.63ms
 ```
 
 ## Configuration
