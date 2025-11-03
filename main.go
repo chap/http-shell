@@ -109,8 +109,14 @@ func handleCommandExecution(token, channelID, userID, teamID, responseURL, comma
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		fmt.Printf("Error creating stdout pipe: %v\n", err)
+		errorMsg := fmt.Sprintf("Error creating stdout pipe: %v\n", err)
 		if streamingEnabled {
-			stopChatStream(token, channelID, threadTS)
+			// Try to append and stop - if either fails, post as reply
+			if !appendToStream(token, channelID, threadTS, errorMsg) || !stopChatStream(token, channelID, threadTS) {
+				postThreadReply(token, channelID, threadTS, errorMsg)
+			}
+		} else {
+			postThreadReply(token, channelID, threadTS, errorMsg)
 		}
 		return
 	}
@@ -118,8 +124,14 @@ func handleCommandExecution(token, channelID, userID, teamID, responseURL, comma
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		fmt.Printf("Error creating stderr pipe: %v\n", err)
+		errorMsg := fmt.Sprintf("Error creating stderr pipe: %v\n", err)
 		if streamingEnabled {
-			stopChatStream(token, channelID, threadTS)
+			// Try to append and stop - if either fails, post as reply
+			if !appendToStream(token, channelID, threadTS, errorMsg) || !stopChatStream(token, channelID, threadTS) {
+				postThreadReply(token, channelID, threadTS, errorMsg)
+			}
+		} else {
+			postThreadReply(token, channelID, threadTS, errorMsg)
 		}
 		return
 	}
@@ -127,10 +139,11 @@ func handleCommandExecution(token, channelID, userID, teamID, responseURL, comma
 	if err := cmd.Start(); err != nil {
 		errorMsg := fmt.Sprintf("Error starting command: %v\n", err)
 		if streamingEnabled {
-			appendToStream(token, channelID, threadTS, errorMsg)
-			stopChatStream(token, channelID, threadTS)
+			// Try to append and stop - if either fails, post as reply
+			if !appendToStream(token, channelID, threadTS, errorMsg) || !stopChatStream(token, channelID, threadTS) {
+				postThreadReply(token, channelID, threadTS, errorMsg)
+			}
 		} else {
-			// Post error as reply if streaming not available
 			postThreadReply(token, channelID, threadTS, errorMsg)
 		}
 		return
@@ -364,6 +377,11 @@ func startChatStream(token, channelID, userID, teamID, threadTS string) (string,
 }
 
 func appendToStream(token, channelID, ts, markdownText string) bool {
+	// Skip sending blank messages
+	if strings.TrimSpace(markdownText) == "" {
+		return true // Return true since skipping is not an error
+	}
+	
 	data := url.Values{}
 	data.Set("token", token)
 	data.Set("channel", channelID)
@@ -402,6 +420,11 @@ func appendToStream(token, channelID, ts, markdownText string) bool {
 }
 
 func postThreadReply(token, channelID, threadTS, text string) {
+	// Skip sending blank messages
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	
 	data := url.Values{}
 	data.Set("token", token)
 	data.Set("channel", channelID)

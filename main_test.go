@@ -442,8 +442,16 @@ func TestAppendToStream(t *testing.T) {
 	slackAPIBaseURL = mockServer.URL
 	defer func() { slackAPIBaseURL = originalBaseURL }()
 
-	appendToStream("test-token", "C123", "1234567890.123456", "test content")
-	appendToStream("test-token", "C123", "1234567890.123456", "more content")
+	// Test successful append
+	success := appendToStream("test-token", "C123", "1234567890.123456", "test content")
+	if !success {
+		t.Error("Expected appendToStream to return true on success")
+	}
+
+	success = appendToStream("test-token", "C123", "1234567890.123456", "more content")
+	if !success {
+		t.Error("Expected appendToStream to return true on success")
+	}
 
 	if len(appendedContent) != 2 {
 		t.Fatalf("Expected 2 appends, got %d", len(appendedContent))
@@ -455,6 +463,77 @@ func TestAppendToStream(t *testing.T) {
 
 	if appendedContent[1] != "more content" {
 		t.Errorf("Expected 'more content', got %q", appendedContent[1])
+	}
+}
+
+func TestAppendToStream_Failure(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/chat.appendStream" {
+			w.Header().Set("Content-Type", "application/json")
+			streamResp := StreamResponse{Ok: false, Error: "invalid_arguments"}
+			json.NewEncoder(w).Encode(streamResp)
+			return
+		}
+	}))
+	defer mockServer.Close()
+
+	originalBaseURL := slackAPIBaseURL
+	slackAPIBaseURL = mockServer.URL
+	defer func() { slackAPIBaseURL = originalBaseURL }()
+
+	// Test failed append
+	success := appendToStream("test-token", "C123", "1234567890.123456", "test content")
+	if success {
+		t.Error("Expected appendToStream to return false on failure")
+	}
+}
+
+func TestAppendToStream_BlankMessage(t *testing.T) {
+	var requestsReceived int
+	
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/chat.appendStream" {
+			requestsReceived++
+			w.Header().Set("Content-Type", "application/json")
+			streamResp := StreamResponse{Ok: true}
+			json.NewEncoder(w).Encode(streamResp)
+			return
+		}
+	}))
+	defer mockServer.Close()
+
+	originalBaseURL := slackAPIBaseURL
+	slackAPIBaseURL = mockServer.URL
+	defer func() { slackAPIBaseURL = originalBaseURL }()
+
+	// Test blank message is skipped
+	success := appendToStream("test-token", "C123", "1234567890.123456", "")
+	if !success {
+		t.Error("Expected appendToStream to return true when skipping blank message")
+	}
+	
+	success = appendToStream("test-token", "C123", "1234567890.123456", "   ")
+	if !success {
+		t.Error("Expected appendToStream to return true when skipping whitespace-only message")
+	}
+	
+	success = appendToStream("test-token", "C123", "1234567890.123456", "\n\t\n")
+	if !success {
+		t.Error("Expected appendToStream to return true when skipping whitespace-only message")
+	}
+	
+	// Verify no requests were sent for blank messages
+	if requestsReceived != 0 {
+		t.Errorf("Expected 0 requests for blank messages, got %d", requestsReceived)
+	}
+	
+	// Verify a non-blank message is sent
+	success = appendToStream("test-token", "C123", "1234567890.123456", "actual content")
+	if !success {
+		t.Error("Expected appendToStream to return true on success")
+	}
+	if requestsReceived != 1 {
+		t.Errorf("Expected 1 request for non-blank message, got %d", requestsReceived)
 	}
 }
 
@@ -484,16 +563,86 @@ func TestStopChatStream(t *testing.T) {
 	slackAPIBaseURL = mockServer.URL
 	defer func() { slackAPIBaseURL = originalBaseURL }()
 
-	stopChatStream("test-token", "C123", "1234567890.123456")
+	// Test successful stop
+	success := stopChatStream("test-token", "C123", "1234567890.123456")
+	if !success {
+		t.Error("Expected stopChatStream to return true on success")
+	}
 
 	if stoppedStreamID != "1234567890.123456" {
 		t.Errorf("Expected timestamp '1234567890.123456', got %q", stoppedStreamID)
 	}
 }
 
+func TestStopChatStream_Failure(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/chat.stopStream" {
+			w.Header().Set("Content-Type", "application/json")
+			streamResp := StreamResponse{Ok: false, Error: "invalid_arguments"}
+			json.NewEncoder(w).Encode(streamResp)
+			return
+		}
+	}))
+	defer mockServer.Close()
+
+	originalBaseURL := slackAPIBaseURL
+	slackAPIBaseURL = mockServer.URL
+	defer func() { slackAPIBaseURL = originalBaseURL }()
+
+	// Test failed stop
+	success := stopChatStream("test-token", "C123", "1234567890.123456")
+	if success {
+		t.Error("Expected stopChatStream to return false on failure")
+	}
+}
+
+func TestPostThreadReply_BlankMessage(t *testing.T) {
+	var requestsReceived int
+	
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/chat.postMessage" {
+			r.ParseForm()
+			if r.FormValue("thread_ts") != "" {
+				requestsReceived++
+				w.Header().Set("Content-Type", "application/json")
+				var msgResp struct {
+					Ok  bool   `json:"ok"`
+					TS  string `json:"ts"`
+				}
+				msgResp.Ok = true
+				msgResp.TS = "1234567890.123456"
+				json.NewEncoder(w).Encode(msgResp)
+				return
+			}
+		}
+	}))
+	defer mockServer.Close()
+
+	originalBaseURL := slackAPIBaseURL
+	slackAPIBaseURL = mockServer.URL
+	defer func() { slackAPIBaseURL = originalBaseURL }()
+
+	// Test blank message is skipped
+	postThreadReply("test-token", "C123", "1234567890.123456", "")
+	postThreadReply("test-token", "C123", "1234567890.123456", "   ")
+	postThreadReply("test-token", "C123", "1234567890.123456", "\n\t\n")
+	
+	// Verify no requests were sent for blank messages
+	if requestsReceived != 0 {
+		t.Errorf("Expected 0 requests for blank messages, got %d", requestsReceived)
+	}
+	
+	// Verify a non-blank message is sent
+	postThreadReply("test-token", "C123", "1234567890.123456", "actual content")
+	if requestsReceived != 1 {
+		t.Errorf("Expected 1 request for non-blank message, got %d", requestsReceived)
+	}
+}
+
 func TestHandleCommandExecution_SimpleCommand(t *testing.T) {
 	var streamOperations []string
 	var streamContents []string
+	var threadReplies []string
 
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -511,6 +660,11 @@ func TestHandleCommandExecution_SimpleCommand(t *testing.T) {
 
 		switch r.URL.Path {
 		case "/chat.postMessage":
+			r.ParseForm()
+			if r.FormValue("thread_ts") != "" {
+				// Track thread replies (should not be called when streaming succeeds)
+				threadReplies = append(threadReplies, r.FormValue("text"))
+			}
 			var msgResp struct {
 				Ok  bool   `json:"ok"`
 				TS  string `json:"ts"`
@@ -596,6 +750,11 @@ func TestHandleCommandExecution_SimpleCommand(t *testing.T) {
 	if !foundCompletion {
 		t.Error("Expected completion information to be appended")
 	}
+	
+	// Verify no fallback thread reply was posted when streaming succeeds
+	if len(threadReplies) > 0 {
+		t.Errorf("Expected no thread replies when streaming succeeds, got %d", len(threadReplies))
+	}
 }
 
 func TestHandleCommandExecution_CommandWithOutput(t *testing.T) {
@@ -675,6 +834,8 @@ func TestHandleCommandExecution_CommandError(t *testing.T) {
 }
 
 func TestHandleCommandExecution_StreamStartFailure(t *testing.T) {
+	var threadReplies []string
+	
 	// Mock server that returns error on startStream
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -689,6 +850,11 @@ func TestHandleCommandExecution_StreamStartFailure(t *testing.T) {
 		}
 
 		if r.URL.Path == "/chat.postMessage" {
+			r.ParseForm()
+			if r.FormValue("thread_ts") != "" {
+				// This is a thread reply
+				threadReplies = append(threadReplies, r.FormValue("text"))
+			}
 			var msgResp struct {
 				Ok  bool   `json:"ok"`
 				TS  string `json:"ts"`
@@ -713,9 +879,180 @@ func TestHandleCommandExecution_StreamStartFailure(t *testing.T) {
 	slackAPIBaseURL = mockServer.URL
 	defer func() { slackAPIBaseURL = originalBaseURL }()
 
-	// This should fail gracefully without crashing
-	handleCommandExecution("test-token", "C123", "U123", "T123", "", "echo test")
-	time.Sleep(100 * time.Millisecond)
+	// This should fail gracefully without crashing and post fallback message
+	handleCommandExecution("test-token", "C123", "U123", "T123", "", "echo 'test output'")
+	
+	// Wait for command to complete
+	time.Sleep(2 * time.Second)
+	
+	// Verify fallback thread reply was posted
+	if len(threadReplies) == 0 {
+		t.Error("Expected thread reply to be posted when streaming fails")
+	}
+	
+	// Verify the reply contains the command output
+	foundOutput := false
+	for _, reply := range threadReplies {
+		if strings.Contains(reply, "test output") {
+			foundOutput = true
+		}
+		if strings.Contains(reply, "Process completed") {
+			foundOutput = true
+		}
+	}
+	if !foundOutput {
+		t.Error("Expected thread reply to contain command output or completion info")
+	}
+}
+
+func TestHandleCommandExecution_StreamAppendFailure(t *testing.T) {
+	var threadReplies []string
+	appendFailureCount := 0
+	
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			w.WriteHeader(http.StatusUnauthorized)
+			streamResp := StreamResponse{Ok: false, Error: "invalid_auth"}
+			json.NewEncoder(w).Encode(streamResp)
+			return
+		}
+
+		var streamResp StreamResponse
+
+		if r.URL.Path == "/chat.postMessage" {
+			r.ParseForm()
+			if r.FormValue("thread_ts") != "" {
+				// This is a thread reply
+				threadReplies = append(threadReplies, r.FormValue("text"))
+			}
+			var msgResp struct {
+				Ok  bool   `json:"ok"`
+				TS  string `json:"ts"`
+			}
+			msgResp.Ok = true
+			msgResp.TS = "1234567890.123456"
+			json.NewEncoder(w).Encode(msgResp)
+			return
+		} else if r.URL.Path == "/chat.startStream" {
+			streamResp.Ok = true
+			streamResp.StreamID = "test-stream"
+		} else if r.URL.Path == "/chat.appendStream" {
+			// Fail first append, succeed on subsequent calls (to test fallback)
+			appendFailureCount++
+			if appendFailureCount == 1 {
+				streamResp.Ok = false
+				streamResp.Error = "invalid_arguments"
+			} else {
+				streamResp.Ok = true
+			}
+		} else if r.URL.Path == "/chat.stopStream" {
+			streamResp.Ok = true
+		}
+
+		json.NewEncoder(w).Encode(streamResp)
+	}))
+	defer mockServer.Close()
+
+	originalBaseURL := slackAPIBaseURL
+	slackAPIBaseURL = mockServer.URL
+	defer func() { slackAPIBaseURL = originalBaseURL }()
+
+	handleCommandExecution("test-token", "C123", "U123", "T123", "", "echo 'test append failure'")
+	
+	// Wait for command to complete
+	time.Sleep(2 * time.Second)
+	
+	// Verify fallback thread reply was posted after append failure
+	if len(threadReplies) == 0 {
+		t.Error("Expected thread reply to be posted when append fails")
+	}
+	
+	// Verify the reply contains the command output
+	foundOutput := false
+	for _, reply := range threadReplies {
+		if strings.Contains(reply, "test append failure") || strings.Contains(reply, "Process completed") {
+			foundOutput = true
+			break
+		}
+	}
+	if !foundOutput {
+		t.Error("Expected thread reply to contain command output or completion info")
+	}
+}
+
+func TestHandleCommandExecution_StreamStopFailure(t *testing.T) {
+	var threadReplies []string
+	
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			w.WriteHeader(http.StatusUnauthorized)
+			streamResp := StreamResponse{Ok: false, Error: "invalid_auth"}
+			json.NewEncoder(w).Encode(streamResp)
+			return
+		}
+
+		var streamResp StreamResponse
+
+		if r.URL.Path == "/chat.postMessage" {
+			r.ParseForm()
+			if r.FormValue("thread_ts") != "" {
+				// This is a thread reply
+				threadReplies = append(threadReplies, r.FormValue("text"))
+			}
+			var msgResp struct {
+				Ok  bool   `json:"ok"`
+				TS  string `json:"ts"`
+			}
+			msgResp.Ok = true
+			msgResp.TS = "1234567890.123456"
+			json.NewEncoder(w).Encode(msgResp)
+			return
+		} else if r.URL.Path == "/chat.startStream" {
+			streamResp.Ok = true
+			streamResp.StreamID = "test-stream"
+		} else if r.URL.Path == "/chat.appendStream" {
+			streamResp.Ok = true
+		} else if r.URL.Path == "/chat.stopStream" {
+			// Fail stop
+			streamResp.Ok = false
+			streamResp.Error = "invalid_arguments"
+		}
+
+		json.NewEncoder(w).Encode(streamResp)
+	}))
+	defer mockServer.Close()
+
+	originalBaseURL := slackAPIBaseURL
+	slackAPIBaseURL = mockServer.URL
+	defer func() { slackAPIBaseURL = originalBaseURL }()
+
+	handleCommandExecution("test-token", "C123", "U123", "T123", "", "echo 'test stop failure'")
+	
+	// Wait for command to complete
+	time.Sleep(2 * time.Second)
+	
+	// Verify fallback thread reply was posted after stop failure
+	if len(threadReplies) == 0 {
+		t.Error("Expected thread reply to be posted when stop fails")
+	}
+	
+	// Verify the reply contains the command output
+	foundOutput := false
+	for _, reply := range threadReplies {
+		if strings.Contains(reply, "test stop failure") || strings.Contains(reply, "Process completed") {
+			foundOutput = true
+			break
+		}
+	}
+	if !foundOutput {
+		t.Error("Expected thread reply to contain command output or completion info")
+	}
 }
 
 // Helper function to create a test handler
