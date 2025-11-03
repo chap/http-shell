@@ -62,6 +62,24 @@ func main() {
 	}
 }
 
+func translateExitCode(code int) string {
+	exitCodes := map[int]string{
+		0:   "success",
+		1:   "error",
+		2:   "misuse",
+		126: "cannot execute",
+		127: "not found",
+		128: "invalid exit",
+		130: "terminated",
+		143: "terminated",
+	}
+
+	if msg, ok := exitCodes[code]; ok {
+		return msg
+	}
+	return fmt.Sprintf("error %d", code)
+}
+
 func executeCommand(command, originalText string) string {
 	startTime := time.Now()
 
@@ -98,7 +116,7 @@ func executeCommand(command, originalText string) string {
 		result.Write(stderr.Bytes())
 	}
 	result.WriteString("```\n\n")
-	result.WriteString(fmt.Sprintf("_%.2fms %dexit_\n", float64(duration.Nanoseconds())/1e6, exitCode))
+	result.WriteString(fmt.Sprintf("_%s %.2fms_\n", translateExitCode(exitCode), float64(duration.Nanoseconds())/1e6))
 
 	return result.String()
 }

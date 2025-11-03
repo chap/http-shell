@@ -149,8 +149,8 @@ func TestHandler_ValidRequest(t *testing.T) {
 		t.Errorf("Expected text to contain 'hello', got %q", text)
 	}
 
-	if !strings.Contains(text, "0exit") {
-		t.Errorf("Expected text to contain '0exit', got %q", text)
+	if !strings.Contains(text, "success") {
+		t.Errorf("Expected text to contain 'success', got %q", text)
 	}
 }
 
@@ -225,8 +225,8 @@ func TestExecuteCommand_SimpleCommand(t *testing.T) {
 		t.Errorf("Expected result to contain code block markers, got %q", result)
 	}
 
-	if !strings.Contains(result, "0exit") {
-		t.Errorf("Expected result to contain '0exit', got %q", result)
+	if !strings.Contains(result, "success") {
+		t.Errorf("Expected result to contain 'success', got %q", result)
 	}
 
 	if !strings.Contains(result, "ms") {
@@ -255,8 +255,12 @@ func TestExecuteCommand_CommandError(t *testing.T) {
 	originalText := "$ false"
 	result := executeCommand("false", originalText)
 
-	if !strings.Contains(result, "1exit") {
-		t.Errorf("Expected result to contain '1exit', got %q", result)
+	if !strings.Contains(result, "error") {
+		t.Errorf("Expected result to contain 'error', got %q", result)
+	}
+
+	if strings.Contains(result, "success") {
+		t.Errorf("Expected result to not contain 'success' for failed command, got %q", result)
 	}
 }
 
@@ -264,13 +268,13 @@ func TestExecuteCommand_NonexistentCommand(t *testing.T) {
 	originalText := "$ nonexistent-command-xyz123"
 	result := executeCommand("nonexistent-command-xyz123", originalText)
 
-	// Should have a non-zero exit code
-	if strings.Contains(result, "0exit") {
+	// Should have a non-zero exit code (127 = not found)
+	if strings.Contains(result, "success") {
 		t.Errorf("Expected non-zero exit code for nonexistent command, got %q", result)
 	}
 
-	if !strings.Contains(result, "exit") {
-		t.Errorf("Expected result to contain exit code format, got %q", result)
+	if !strings.Contains(result, "not found") {
+		t.Errorf("Expected result to contain 'not found' for nonexistent command, got %q", result)
 	}
 }
 
@@ -282,8 +286,8 @@ func TestExecuteCommand_ExecutionTime(t *testing.T) {
 		t.Errorf("Expected result to contain execution time with 'ms', got %q", result)
 	}
 
-	// Should contain the time in the format "_X.XXms Xexit"
+	// Should contain the time in the format "_success X.XXms_" or "_error X.XXms_"
 	if !strings.Contains(result, "_") {
-		t.Errorf("Expected result to contain '_' prefix for time, got %q", result)
+		t.Errorf("Expected result to contain '_' for italic formatting, got %q", result)
 	}
 }
