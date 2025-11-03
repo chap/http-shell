@@ -86,7 +86,7 @@ func main() {
 
 func handleCommandExecution(token, channelID, userID, teamID, responseURL, command string) {
 	// First, post an initial message to get a valid thread_ts
-	threadTS, err := postInitialMessage(token, channelID, userID, teamID)
+	threadTS, err := postInitialMessage(token, channelID, userID, teamID, command)
 	if err != nil {
 		fmt.Printf("Error posting initial message: %v\n", err)
 		return
@@ -236,11 +236,13 @@ func handleCommandExecution(token, channelID, userID, teamID, responseURL, comma
 	}
 }
 
-func postInitialMessage(token, channelID, userID, teamID string) (string, error) {
+func postInitialMessage(token, channelID, userID, teamID, command string) (string, error) {
 	data := url.Values{}
 	data.Set("token", token)
 	data.Set("channel", channelID)
-	data.Set("text", "Starting sandbox...")
+	// Tag user and show command
+	messageText := fmt.Sprintf("<@%s> Starting sandbox...\n```\n%s\n```", userID, command)
+	data.Set("text", messageText)
 
 	req, err := http.NewRequest("POST", slackAPIBaseURL+"/chat.postMessage", strings.NewReader(data.Encode()))
 	if err != nil {
