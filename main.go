@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -42,10 +43,16 @@ func main() {
 		// Execute command synchronously and return result
 		result := executeCommand(command)
 
-		// Return result in response
-		w.Header().Set("Content-Type", "text/plain")
+		// Create JSON response
+		response := map[string]string{
+			"response_type": "in_channel",
+			"text":          result,
+		}
+
+		// Return JSON response
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(result))
+		json.NewEncoder(w).Encode(response)
 	})
 
 	fmt.Printf("Starting server on port %s\n", port)

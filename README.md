@@ -17,7 +17,7 @@ The leading `$` in the `text` field is automatically stripped before execution.
 
 ## Response
 
-The command is executed synchronously in the shell, and the result is returned directly in the HTTP response body. The response includes:
+The command is executed synchronously in the shell, and the result is returned as a JSON response with `response_type: "in_channel"` and the command output in the `text` field. The response includes:
 
 - Command output (stdout)
 - Error output (stderr) if present
@@ -25,12 +25,11 @@ The command is executed synchronously in the shell, and the result is returned d
 - Execution time
 
 Example response:
-```
-```
-output from command
-```
-
-exit: 0 | 1.63ms
+```json
+{
+    "response_type": "in_channel",
+    "text": "```\noutput from command\n```\n\nexit: 0 | 1.63ms\n"
+}
 ```
 
 ## Configuration
