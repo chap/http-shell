@@ -92,11 +92,14 @@ func handleCommandExecution(token, channelID, userID, teamID, responseURL, comma
 		return
 	}
 
-	// Start chat stream using the message timestamp
+	// Track if streaming is working
+	streamingEnabled := false
 	_, err = startChatStream(token, channelID, userID, teamID, threadTS)
 	if err != nil {
 		fmt.Printf("Error starting chat stream: %v\n", err)
-		return
+		// Continue without streaming - will post all output at the end
+	} else {
+		streamingEnabled = true
 	}
 
 	// Execute command
@@ -106,20 +109,30 @@ func handleCommandExecution(token, channelID, userID, teamID, responseURL, comma
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		fmt.Printf("Error creating stdout pipe: %v\n", err)
-		stopChatStream(token, channelID, threadTS)
+		if streamingEnabled {
+			stopChatStream(token, channelID, threadTS)
+		}
 		return
 	}
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		fmt.Printf("Error creating stderr pipe: %v\n", err)
-		stopChatStream(token, channelID, threadTS)
+		if streamingEnabled {
+			stopChatStream(token, channelID, threadTS)
+		}
 		return
 	}
 
 	if err := cmd.Start(); err != nil {
-		appendToStream(token, channelID, threadTS, fmt.Sprintf("Error starting command: %v\n", err))
-		stopChatStream(token, channelID, threadTS)
+		errorMsg := fmt.Sprintf("Error starting command: %v\n", err)
+		if streamingEnabled {
+			appendToStream(token, channelID, threadTS, errorMsg)
+			stopChatStream(token, channelID, threadTS)
+		} else {
+			// Post error as reply if streaming not available
+			postThreadReply(token, channelID, threadTS, errorMsg)
+		}
 		return
 	}
 
@@ -173,6 +186,7 @@ func handleCommandExecution(token, channelID, userID, teamID, responseURL, comma
 	}()
 
 	var lastSentLen int
+	streamingFailed := false
 
 	for {
 		select {
@@ -182,11 +196,15 @@ func handleCommandExecution(token, channelID, userID, teamID, responseURL, comma
 
 		case <-ticker.C:
 			// Append new output since last append
-			if outputBuf.Len() > lastSentLen {
+			if outputBuf.Len() > lastSentLen && streamingEnabled && !streamingFailed {
 				newOutput := outputBuf.Bytes()[lastSentLen:]
 				if len(newOutput) > 0 {
-					appendToStream(token, channelID, threadTS, string(newOutput))
-					lastSentLen = outputBuf.Len()
+					if !appendToStream(token, channelID, threadTS, string(newOutput)) {
+						// If append fails, mark streaming as failed
+						streamingFailed = true
+					} else {
+						lastSentLen = outputBuf.Len()
+					}
 				}
 			}
 
@@ -206,14 +224,6 @@ func handleCommandExecution(token, channelID, userID, teamID, responseURL, comma
 			}
 		drained:
 
-			// Append any remaining output
-			if outputBuf.Len() > lastSentLen {
-				remainingOutput := outputBuf.Bytes()[lastSentLen:]
-				if len(remainingOutput) > 0 {
-					appendToStream(token, channelID, threadTS, string(remainingOutput))
-				}
-			}
-
 			// Get exit code
 			exitCode := 0
 			if err != nil {
@@ -225,12 +235,40 @@ func handleCommandExecution(token, channelID, userID, teamID, responseURL, comma
 			// Calculate execution time
 			duration := time.Since(startTime)
 
-			// Append debugging information
+			// Prepare final output
+			var finalOutput bytes.Buffer
+			finalOutput.Write(outputBuf.Bytes())
 			debugInfo := fmt.Sprintf("```\n\n**Process completed**\n- Exit code: %d\n- Execution time: %v\n", exitCode, duration)
-			appendToStream(token, channelID, threadTS, debugInfo)
+			finalOutput.WriteString(debugInfo)
 
-			// Stop the stream
-			stopChatStream(token, channelID, threadTS)
+			// If streaming failed or was never enabled, post all output as a reply
+			if !streamingEnabled || streamingFailed {
+				postThreadReply(token, channelID, threadTS, finalOutput.String())
+			} else {
+				// Try to append remaining output and debug info
+				if outputBuf.Len() > lastSentLen {
+					remainingOutput := outputBuf.Bytes()[lastSentLen:]
+					if len(remainingOutput) > 0 {
+						if !appendToStream(token, channelID, threadTS, string(remainingOutput)) {
+							streamingFailed = true
+						}
+					}
+				}
+				if !streamingFailed {
+					if !appendToStream(token, channelID, threadTS, debugInfo) {
+						streamingFailed = true
+					} else {
+						// Try to stop stream - if it fails, mark as failed
+						if !stopChatStream(token, channelID, threadTS) {
+							streamingFailed = true
+						}
+					}
+				}
+				// If streaming failed at any point (append or stop), post everything as reply
+				if streamingFailed {
+					postThreadReply(token, channelID, threadTS, finalOutput.String())
+				}
+			}
 			return
 		}
 	}
@@ -241,7 +279,7 @@ func postInitialMessage(token, channelID, userID, teamID, command string) (strin
 	data.Set("token", token)
 	data.Set("channel", channelID)
 	// Tag user and show command
-	messageText := fmt.Sprintf("<@%s> starting sandbox `%s`...\n", userID, command, command)
+	messageText := fmt.Sprintf("<@%s> starting sandbox `%s`...\n", userID, command)
 	data.Set("text", messageText)
 
 	req, err := http.NewRequest("POST", slackAPIBaseURL+"/chat.postMessage", strings.NewReader(data.Encode()))
@@ -325,7 +363,7 @@ func startChatStream(token, channelID, userID, teamID, threadTS string) (string,
 	return streamResp.StreamID, nil
 }
 
-func appendToStream(token, channelID, ts, markdownText string) {
+func appendToStream(token, channelID, ts, markdownText string) bool {
 	data := url.Values{}
 	data.Set("token", token)
 	data.Set("channel", channelID)
@@ -335,7 +373,7 @@ func appendToStream(token, channelID, ts, markdownText string) {
 	req, err := http.NewRequest("POST", slackAPIBaseURL+"/chat.appendStream", strings.NewReader(data.Encode()))
 	if err != nil {
 		fmt.Printf("Error creating append request: %v\n", err)
-		return
+		return false
 	}
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -345,30 +383,34 @@ func appendToStream(token, channelID, ts, markdownText string) {
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Printf("Error appending to stream: %v\n", err)
-		return
+		return false
 	}
 	defer resp.Body.Close()
 
 	var streamResp StreamResponse
 	if err := json.NewDecoder(resp.Body).Decode(&streamResp); err != nil {
 		fmt.Printf("Error decoding append response: %v\n", err)
-		return
+		return false
 	}
 
 	if !streamResp.Ok {
 		fmt.Printf("Slack API error appending: %s\n", streamResp.Error)
+		return false
 	}
+
+	return true
 }
 
-func stopChatStream(token, channelID, ts string) {
+func postThreadReply(token, channelID, threadTS, text string) {
 	data := url.Values{}
 	data.Set("token", token)
 	data.Set("channel", channelID)
-	data.Set("ts", ts)
+	data.Set("thread_ts", threadTS)
+	data.Set("text", text)
 
-	req, err := http.NewRequest("POST", slackAPIBaseURL+"/chat.stopStream", strings.NewReader(data.Encode()))
+	req, err := http.NewRequest("POST", slackAPIBaseURL+"/chat.postMessage", strings.NewReader(data.Encode()))
 	if err != nil {
-		fmt.Printf("Error creating stop request: %v\n", err)
+		fmt.Printf("Error creating thread reply request: %v\n", err)
 		return
 	}
 
@@ -378,18 +420,55 @@ func stopChatStream(token, channelID, ts string) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Printf("Error stopping stream: %v\n", err)
+		fmt.Printf("Error posting thread reply: %v\n", err)
 		return
+	}
+	defer resp.Body.Close()
+
+	var msgResp PostMessageResponse
+	if err := json.NewDecoder(resp.Body).Decode(&msgResp); err != nil {
+		fmt.Printf("Error decoding thread reply response: %v\n", err)
+		return
+	}
+
+	if !msgResp.Ok {
+		fmt.Printf("Slack API error posting thread reply: %s\n", msgResp.Error)
+	}
+}
+
+func stopChatStream(token, channelID, ts string) bool {
+	data := url.Values{}
+	data.Set("token", token)
+	data.Set("channel", channelID)
+	data.Set("ts", ts)
+
+	req, err := http.NewRequest("POST", slackAPIBaseURL+"/chat.stopStream", strings.NewReader(data.Encode()))
+	if err != nil {
+		fmt.Printf("Error creating stop request: %v\n", err)
+		return false
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("Error stopping stream: %v\n", err)
+		return false
 	}
 	defer resp.Body.Close()
 
 	var streamResp StreamResponse
 	if err := json.NewDecoder(resp.Body).Decode(&streamResp); err != nil {
 		fmt.Printf("Error decoding stop response: %v\n", err)
-		return
+		return false
 	}
 
 	if !streamResp.Ok {
 		fmt.Printf("Slack API error stopping stream: %s\n", streamResp.Error)
+		return false
 	}
+
+	return true
 }
