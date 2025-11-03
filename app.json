@@ -1,0 +1,13 @@
+{
+  "apiVersion": "heroku.com/v1alpha1",
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "Eco"
+    }
+  },
+  "kind": "app",
+  "name": "chap-http-shell",
+  "repo": "https://github.com/chap/canary",
+  "stack": "heroku-24",
+}

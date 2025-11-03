@@ -1,0 +1,7 @@
+
+# Dyno-proxy test files
+*plugins-local/*
+*node_modules/
+*.dyno-proxy-static.json
+*.dyno-proxy-dynamic.json
+.env
