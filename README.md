@@ -1,36 +1,56 @@
 # HTTP Shell
 
-This go web app receives a Slack HTTP POST request on $PORT that is encoded `application/x-www-form-urlencoded` and executes the command in the `text` field.
+This Go web app receives an HTTP POST request on `$PORT` that is encoded `application/x-www-form-urlencoded` and executes the command in the `text` field synchronously.
+
+## Request Format
+
+The server expects a POST request with form-encoded data containing at minimum a `text` field:
 
 ```
 # application/x-www-form-urlencoded
-token=gIkuvaNzQIHg97ATvDxqgjtO
-&team_id=T0001
-&team_domain=example
-&enterprise_id=E0001
-&enterprise_name=Globular%20Construct%20Inc
-&channel_id=C2147483705
-&channel_name=test
-&user_id=U2147483697
-&user_name=Steve
-&command=/h
-&text=$+date
-&response_url=https://hooks.slack.com/commands/1234/5678
-&trigger_id=13345224609.738474920.8088930838d88f008e0
-&api_app_id=A123456
+text=$ date
 ```
 
-When the request is received, a succssful response with an empty body is returned immediately.
+Additional fields may be included but are not required (e.g., `channel_id`, `user_id`, `team_id`, etc. for compatibility with Slack webhook formats).
 
-Then a goroutine is spawned to start the chat stream:
-https://docs.slack.dev/reference/methods/chat.startStream/
+The leading `$` in the `text` field is automatically stripped before execution.
 
-Another goroutine is spawned to execute the shell command in the `text` field. (Striping the leading '$'.)
+## Response
 
-Every 1 second, shell logs are appended to chat stream:
-https://docs.slack.dev/reference/methods/chat.appendStream
+The command is executed synchronously in the shell, and the result is returned directly in the HTTP response body. The response includes:
 
-When the shell process exits, basic debugging information (exit code, clock time, etc) is appended and the chat stream is stopped:
-https://docs.slack.dev/reference/methods/chat.stopStream/
+- Command output (stdout)
+- Error output (stderr) if present
+- Exit code
+- Execution time
 
-If SLACK_TOKEN is not set, the app fails to start.
+Example response:
+```
+```
+output from command
+```
+
+**Process completed**
+- Exit code: 0
+- Execution time: 123.456ms
+```
+
+## Configuration
+
+- `PORT`: Server port (defaults to `8080`)
+
+## Usage
+
+Start the server:
+```bash
+export PORT=8080  # optional, defaults to 8080
+go run main.go
+```
+
+Send a request:
+```bash
+curl -X POST http://localhost:8080 \
+  -d "text=\$ echo hello world"
+```
+
+The server will execute the command and return the result in the response body.
