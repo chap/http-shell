@@ -93,7 +93,7 @@ func handleCommandExecution(token, channelID, userID, teamID, responseURL, comma
 	}
 
 	// Start chat stream using the message timestamp
-	streamID, err := startChatStream(token, channelID, userID, teamID, threadTS)
+	_, err = startChatStream(token, channelID, userID, teamID, threadTS)
 	if err != nil {
 		fmt.Printf("Error starting chat stream: %v\n", err)
 		return

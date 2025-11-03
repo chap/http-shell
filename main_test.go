@@ -80,6 +80,30 @@ func setupMockSlackServerWithAuth(expectedToken string) *httptest.Server {
 					return
 				}
 			}
+			// Additional validation for appendStream
+			if r.URL.Path == "/chat.appendStream" {
+				if r.FormValue("channel") == "" || r.FormValue("ts") == "" || r.FormValue("markdown_text") == "" {
+					streamResp := StreamResponse{
+						Ok:    false,
+						Error: "missing_required_field",
+					}
+					w.WriteHeader(http.StatusBadRequest)
+					json.NewEncoder(w).Encode(streamResp)
+					return
+				}
+			}
+			// Additional validation for stopStream
+			if r.URL.Path == "/chat.stopStream" {
+				if r.FormValue("channel") == "" || r.FormValue("ts") == "" {
+					streamResp := StreamResponse{
+						Ok:    false,
+						Error: "missing_required_field",
+					}
+					w.WriteHeader(http.StatusBadRequest)
+					json.NewEncoder(w).Encode(streamResp)
+					return
+				}
+			}
 		}
 
 		switch r.URL.Path {
