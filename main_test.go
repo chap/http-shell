@@ -80,6 +80,15 @@ func setupMockSlackServerWithAuth(expectedToken string) *httptest.Server {
 		}
 
 		switch r.URL.Path {
+		case "/chat.postMessage":
+			var msgResp struct {
+				Ok  bool   `json:"ok"`
+				TS  string `json:"ts"`
+			}
+			msgResp.Ok = true
+			msgResp.TS = "1234567890.123456"
+			json.NewEncoder(w).Encode(msgResp)
+
 		case "/chat.startStream":
 			var streamResp StreamResponse
 			streamResp.Ok = true
@@ -257,7 +266,7 @@ func TestStartChatStream_Success(t *testing.T) {
 	slackAPIBaseURL = mockServer.URL
 	defer func() { slackAPIBaseURL = originalBaseURL }()
 
-	streamID, err := startChatStream("test-token", "C123", "U123", "T123")
+	streamID, err := startChatStream("test-token", "C123", "U123", "T123", "1234567890.123456")
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -287,7 +296,7 @@ func TestStartChatStream_APIError(t *testing.T) {
 	slackAPIBaseURL = mockServer.URL
 	defer func() { slackAPIBaseURL = originalBaseURL }()
 
-	_, err := startChatStream("test-token", "C123", "trigger-123")
+	_, err := startChatStream("test-token", "C123", "U123", "T123", "1234567890.123456")
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
@@ -314,7 +323,7 @@ func TestStartChatStream_MissingAuthHeader(t *testing.T) {
 	slackAPIBaseURL = mockServer.URL
 	defer func() { slackAPIBaseURL = originalBaseURL }()
 
-	_, err := startChatStream("test-token", "C123", "trigger-123")
+	_, err := startChatStream("test-token", "C123", "U123", "T123", "1234567890.123456")
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
@@ -359,7 +368,7 @@ func TestStartChatStream_ValidatesFormData(t *testing.T) {
 	slackAPIBaseURL = mockServer.URL
 	defer func() { slackAPIBaseURL = originalBaseURL }()
 
-	streamID, err := startChatStream("test-token", "C123", "U123", "T123")
+	streamID, err := startChatStream("test-token", "C123", "U123", "T123", "1234567890.123456")
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -374,7 +383,7 @@ func TestStartChatStream_NetworkError(t *testing.T) {
 	slackAPIBaseURL = "http://localhost:0" // Invalid port
 	defer func() { slackAPIBaseURL = originalBaseURL }()
 
-	_, err := startChatStream("test-token", "C123", "trigger-123")
+	_, err := startChatStream("test-token", "C123", "U123", "T123")
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
@@ -435,15 +444,7 @@ func TestStopChatStream(t *testing.T) {
 				return
 			}
 
-			// Validate token is NOT in form data
 			r.ParseForm()
-			if r.FormValue("token") != "" {
-				w.WriteHeader(http.StatusBadRequest)
-				streamResp := StreamResponse{Ok: false, Error: "token should not be in form data"}
-				json.NewEncoder(w).Encode(streamResp)
-				return
-			}
-
 			stoppedStreamID = r.FormValue("stream_id")
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -490,14 +491,8 @@ func TestHandleCommandExecution_SimpleCommand(t *testing.T) {
 		case "/chat.appendStream":
 			streamOperations = append(streamOperations, "append")
 			r.ParseForm()
-			// Verify token is NOT in form data
-			if r.FormValue("token") != "" {
-				streamResp.Ok = false
-				streamResp.Error = "token should not be in form data"
-			} else {
-				streamContents = append(streamContents, r.FormValue("content"))
-				streamResp.Ok = true
-			}
+			streamContents = append(streamContents, r.FormValue("content"))
+			streamResp.Ok = true
 
 		case "/chat.stopStream":
 			streamOperations = append(streamOperations, "stop")
@@ -586,10 +581,7 @@ func TestHandleCommandExecution_CommandWithOutput(t *testing.T) {
 
 		if r.URL.Path == "/chat.appendStream" {
 			r.ParseForm()
-			// Verify token is NOT in form data
-			if r.FormValue("token") == "" {
-				appendedContents = append(appendedContents, r.FormValue("content"))
-			}
+			appendedContents = append(appendedContents, r.FormValue("content"))
 		} else if r.URL.Path == "/chat.startStream" {
 			streamResp.StreamID = "test-stream"
 		}
@@ -683,10 +675,12 @@ func createTestHandler(token string) http.HandlerFunc {
 		}
 
 		text := r.FormValue("text")
-		triggerID := r.FormValue("trigger_id")
 		channelID := r.FormValue("channel_id")
+		userID := r.FormValue("user_id")
+		teamID := r.FormValue("team_id")
+		responseURL := r.FormValue("response_url")
 
-		if text == "" || triggerID == "" || channelID == "" {
+		if text == "" || channelID == "" || userID == "" {
 			http.Error(w, "Missing required fields", http.StatusBadRequest)
 			return
 		}
@@ -696,7 +690,7 @@ func createTestHandler(token string) http.HandlerFunc {
 
 		w.WriteHeader(http.StatusOK)
 
-		go handleCommandExecution(token, channelID, triggerID, command)
+		go handleCommandExecution(token, channelID, userID, teamID, responseURL, command)
 	}
 }
 

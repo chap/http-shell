@@ -22,6 +22,15 @@ type StreamResponse struct {
 	StreamID string `json:"stream_id,omitempty"`
 }
 
+type PostMessageResponse struct {
+	Ok      bool   `json:"ok"`
+	Error   string `json:"error,omitempty"`
+	TS      string `json:"ts,omitempty"`
+	Message struct {
+		TS string `json:"ts,omitempty"`
+	} `json:"message,omitempty"`
+}
+
 func main() {
 	slackToken := os.Getenv("SLACK_TOKEN")
 	if slackToken == "" {
@@ -76,8 +85,15 @@ func main() {
 }
 
 func handleCommandExecution(token, channelID, userID, teamID, responseURL, command string) {
-	// Start chat stream
-	streamID, err := startChatStream(token, channelID, userID, teamID)
+	// First, post an initial message to get a valid thread_ts
+	threadTS, err := postInitialMessage(token, channelID, userID, teamID)
+	if err != nil {
+		fmt.Printf("Error posting initial message: %v\n", err)
+		return
+	}
+
+	// Start chat stream using the message timestamp
+	streamID, err := startChatStream(token, channelID, userID, teamID, threadTS)
 	if err != nil {
 		fmt.Printf("Error starting chat stream: %v\n", err)
 		return
@@ -220,14 +236,53 @@ func handleCommandExecution(token, channelID, userID, teamID, responseURL, comma
 	}
 }
 
-func startChatStream(token, channelID, userID, teamID string) (string, error) {
+func postInitialMessage(token, channelID, userID, teamID string) (string, error) {
 	data := url.Values{}
 	data.Set("token", token)
 	data.Set("channel", channelID)
-	
-	// thread_ts is required - use current timestamp to create a new thread
-	// For slash commands, this will start a new thread/reply
-	threadTS := fmt.Sprintf("%d", time.Now().Unix())
+	data.Set("text", "```\n")
+
+	req, err := http.NewRequest("POST", slackAPIBaseURL+"/chat.postMessage", strings.NewReader(data.Encode()))
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var msgResp PostMessageResponse
+	if err := json.NewDecoder(resp.Body).Decode(&msgResp); err != nil {
+		return "", err
+	}
+
+	if !msgResp.Ok {
+		return "", fmt.Errorf("slack API error: %s", msgResp.Error)
+	}
+
+	// Get timestamp from response
+	ts := msgResp.TS
+	if ts == "" && msgResp.Message.TS != "" {
+		ts = msgResp.Message.TS
+	}
+
+	if ts == "" {
+		return "", fmt.Errorf("no timestamp in postMessage response")
+	}
+
+	return ts, nil
+}
+
+func startChatStream(token, channelID, userID, teamID, threadTS string) (string, error) {
+	data := url.Values{}
+	data.Set("token", token)
+	data.Set("channel", channelID)
 	data.Set("thread_ts", threadTS)
 
 	// recipient_user_id and recipient_team_id are required when streaming to channels
