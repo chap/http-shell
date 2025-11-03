@@ -56,8 +56,8 @@ func setupMockSlackServerWithAuth(expectedToken string) *httptest.Server {
 
 		// Validate required form parameters
 		if err := r.ParseForm(); err == nil {
-			// Token should be in form data for chat.startStream
-			if r.URL.Path == "/chat.startStream" {
+			// Token should be in form data for all streaming endpoints
+			if r.URL.Path == "/chat.startStream" || r.URL.Path == "/chat.appendStream" || r.URL.Path == "/chat.stopStream" {
 				if r.FormValue("token") == "" {
 					streamResp := StreamResponse{
 						Ok:    false,
@@ -67,6 +67,9 @@ func setupMockSlackServerWithAuth(expectedToken string) *httptest.Server {
 					json.NewEncoder(w).Encode(streamResp)
 					return
 				}
+			}
+			// Additional validation for startStream
+			if r.URL.Path == "/chat.startStream" {
 				if r.FormValue("channel") == "" || r.FormValue("thread_ts") == "" {
 					streamResp := StreamResponse{
 						Ok:    false,
@@ -383,7 +386,7 @@ func TestStartChatStream_NetworkError(t *testing.T) {
 	slackAPIBaseURL = "http://localhost:0" // Invalid port
 	defer func() { slackAPIBaseURL = originalBaseURL }()
 
-	_, err := startChatStream("test-token", "C123", "U123", "T123")
+	_, err := startChatStream("test-token", "C123", "U123", "T123", "1234567890.123456")
 	if err == nil {
 		t.Fatal("Expected error, got nil")
 	}
@@ -483,6 +486,16 @@ func TestHandleCommandExecution_SimpleCommand(t *testing.T) {
 		var streamResp StreamResponse
 
 		switch r.URL.Path {
+		case "/chat.postMessage":
+			var msgResp struct {
+				Ok  bool   `json:"ok"`
+				TS  string `json:"ts"`
+			}
+			msgResp.Ok = true
+			msgResp.TS = "1234567890.123456"
+			json.NewEncoder(w).Encode(msgResp)
+			return
+
 		case "/chat.startStream":
 			streamOperations = append(streamOperations, "start")
 			streamResp.Ok = true
@@ -579,7 +592,16 @@ func TestHandleCommandExecution_CommandWithOutput(t *testing.T) {
 		var streamResp StreamResponse
 		streamResp.Ok = true
 
-		if r.URL.Path == "/chat.appendStream" {
+		if r.URL.Path == "/chat.postMessage" {
+			var msgResp struct {
+				Ok  bool   `json:"ok"`
+				TS  string `json:"ts"`
+			}
+			msgResp.Ok = true
+			msgResp.TS = "1234567890.123456"
+			json.NewEncoder(w).Encode(msgResp)
+			return
+		} else if r.URL.Path == "/chat.appendStream" {
 			r.ParseForm()
 			appendedContents = append(appendedContents, r.FormValue("content"))
 		} else if r.URL.Path == "/chat.startStream" {
@@ -639,6 +661,17 @@ func TestHandleCommandExecution_StreamStartFailure(t *testing.T) {
 			w.WriteHeader(http.StatusUnauthorized)
 			streamResp := StreamResponse{Ok: false, Error: "invalid_auth"}
 			json.NewEncoder(w).Encode(streamResp)
+			return
+		}
+
+		if r.URL.Path == "/chat.postMessage" {
+			var msgResp struct {
+				Ok  bool   `json:"ok"`
+				TS  string `json:"ts"`
+			}
+			msgResp.Ok = true
+			msgResp.TS = "1234567890.123456"
+			json.NewEncoder(w).Encode(msgResp)
 			return
 		}
 

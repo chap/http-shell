@@ -17,8 +17,8 @@ var (
 )
 
 type StreamResponse struct {
-	Ok      bool   `json:"ok"`
-	Error   string `json:"error,omitempty"`
+	Ok       bool   `json:"ok"`
+	Error    string `json:"error,omitempty"`
 	StreamID string `json:"stream_id,omitempty"`
 }
 
@@ -101,7 +101,7 @@ func handleCommandExecution(token, channelID, userID, teamID, responseURL, comma
 
 	// Execute command
 	cmd := exec.Command("sh", "-c", command)
-	
+
 	// Capture stdout and stderr
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -240,7 +240,7 @@ func postInitialMessage(token, channelID, userID, teamID string) (string, error)
 	data := url.Values{}
 	data.Set("token", token)
 	data.Set("channel", channelID)
-	data.Set("text", "```\n")
+	data.Set("text", "Starting sandbox...")
 
 	req, err := http.NewRequest("POST", slackAPIBaseURL+"/chat.postMessage", strings.NewReader(data.Encode()))
 	if err != nil {
@@ -325,6 +325,7 @@ func startChatStream(token, channelID, userID, teamID, threadTS string) (string,
 
 func appendToStream(token, streamID, content string) {
 	data := url.Values{}
+	data.Set("token", token)
 	data.Set("stream_id", streamID)
 	data.Set("content", content)
 
@@ -358,6 +359,7 @@ func appendToStream(token, streamID, content string) {
 
 func stopChatStream(token, streamID string) {
 	data := url.Values{}
+	data.Set("token", token)
 	data.Set("stream_id", streamID)
 
 	req, err := http.NewRequest("POST", slackAPIBaseURL+"/chat.stopStream", strings.NewReader(data.Encode()))
@@ -387,4 +389,3 @@ func stopChatStream(token, streamID string) {
 		fmt.Printf("Slack API error stopping stream: %s\n", streamResp.Error)
 	}
 }
-
