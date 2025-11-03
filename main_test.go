@@ -13,8 +13,71 @@ import (
 
 // Mock Slack API server
 func setupMockSlackServer() *httptest.Server {
+	return setupMockSlackServerWithAuth("")
+}
+
+// Mock Slack API server with optional expected token
+func setupMockSlackServerWithAuth(expectedToken string) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+
+		// Validate Authorization header
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			streamResp := StreamResponse{
+				Ok:    false,
+				Error: "invalid_auth",
+			}
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(streamResp)
+			return
+		}
+
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			streamResp := StreamResponse{
+				Ok:    false,
+				Error: "invalid_auth",
+			}
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(streamResp)
+			return
+		}
+
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		if expectedToken != "" && token != expectedToken {
+			streamResp := StreamResponse{
+				Ok:    false,
+				Error: "invalid_auth",
+			}
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(streamResp)
+			return
+		}
+
+		// Validate required form parameters
+		if err := r.ParseForm(); err == nil {
+			// Token should be in form data for chat.startStream
+			if r.URL.Path == "/chat.startStream" {
+				if r.FormValue("token") == "" {
+					streamResp := StreamResponse{
+						Ok:    false,
+						Error: "missing_required_field",
+					}
+					w.WriteHeader(http.StatusBadRequest)
+					json.NewEncoder(w).Encode(streamResp)
+					return
+				}
+				if r.FormValue("channel") == "" || r.FormValue("thread_ts") == "" {
+					streamResp := StreamResponse{
+						Ok:    false,
+						Error: "missing_required_field",
+					}
+					w.WriteHeader(http.StatusBadRequest)
+					json.NewEncoder(w).Encode(streamResp)
+					return
+				}
+			}
+		}
 
 		switch r.URL.Path {
 		case "/chat.startStream":
@@ -81,10 +144,10 @@ func TestHandler_MissingRequiredFields(t *testing.T) {
 		name   string
 		fields map[string]string
 	}{
-		{"missing text", map[string]string{"trigger_id": "123", "channel_id": "C123"}},
-		{"missing trigger_id", map[string]string{"text": "date", "channel_id": "C123"}},
-		{"missing channel_id", map[string]string{"text": "date", "trigger_id": "123"}},
-		{"empty text", map[string]string{"text": "", "trigger_id": "123", "channel_id": "C123"}},
+		{"missing text", map[string]string{"channel_id": "C123", "user_id": "U123"}},
+		{"missing channel_id", map[string]string{"text": "date", "user_id": "U123"}},
+		{"missing user_id", map[string]string{"text": "date", "channel_id": "C123"}},
+		{"empty text", map[string]string{"text": "", "channel_id": "C123", "user_id": "U123"}},
 	}
 
 	for _, tt := range tests {
@@ -119,9 +182,9 @@ func TestHandler_ValidRequest(t *testing.T) {
 
 	data := url.Values{}
 	data.Set("text", "$ date")
-	data.Set("trigger_id", "test-trigger-id")
 	data.Set("channel_id", "C123")
 	data.Set("user_id", "U123")
+	data.Set("team_id", "T123")
 	data.Set("command", "/h")
 
 	req := httptest.NewRequest("POST", "/", strings.NewReader(data.Encode()))
@@ -166,8 +229,8 @@ func TestHandler_StripDollarPrefix(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			data := url.Values{}
 			data.Set("text", tt.input)
-			data.Set("trigger_id", "test-trigger-id")
 			data.Set("channel_id", "C123")
+			data.Set("user_id", "U123")
 
 			req := httptest.NewRequest("POST", "/", strings.NewReader(data.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -187,14 +250,14 @@ func TestHandler_StripDollarPrefix(t *testing.T) {
 }
 
 func TestStartChatStream_Success(t *testing.T) {
-	mockServer := setupMockSlackServer()
+	mockServer := setupMockSlackServerWithAuth("test-token")
 	defer mockServer.Close()
 
 	originalBaseURL := slackAPIBaseURL
 	slackAPIBaseURL = mockServer.URL
 	defer func() { slackAPIBaseURL = originalBaseURL }()
 
-	streamID, err := startChatStream("test-token", "C123", "trigger-123")
+	streamID, err := startChatStream("test-token", "C123", "U123", "T123")
 	if err != nil {
 		t.Fatalf("Expected no error, got %v", err)
 	}
@@ -207,6 +270,11 @@ func TestStartChatStream_Success(t *testing.T) {
 func TestStartChatStream_APIError(t *testing.T) {
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		// Check Authorization header
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			w.WriteHeader(http.StatusUnauthorized)
+		}
 		streamResp := StreamResponse{
 			Ok:    false,
 			Error: "invalid_auth",
@@ -229,6 +297,78 @@ func TestStartChatStream_APIError(t *testing.T) {
 	}
 }
 
+func TestStartChatStream_MissingAuthHeader(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Simulate missing Authorization header
+		w.WriteHeader(http.StatusUnauthorized)
+		streamResp := StreamResponse{
+			Ok:    false,
+			Error: "invalid_auth",
+		}
+		json.NewEncoder(w).Encode(streamResp)
+	}))
+	defer mockServer.Close()
+
+	originalBaseURL := slackAPIBaseURL
+	slackAPIBaseURL = mockServer.URL
+	defer func() { slackAPIBaseURL = originalBaseURL }()
+
+	_, err := startChatStream("test-token", "C123", "trigger-123")
+	if err == nil {
+		t.Fatal("Expected error, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "invalid_auth") {
+		t.Errorf("Expected error to contain 'invalid_auth', got %q", err.Error())
+	}
+}
+
+func TestStartChatStream_ValidatesFormData(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		
+		// Validate Authorization header exists
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			w.WriteHeader(http.StatusUnauthorized)
+			streamResp := StreamResponse{Ok: false, Error: "invalid_auth"}
+			json.NewEncoder(w).Encode(streamResp)
+			return
+		}
+
+		// Validate required fields are present
+		if err := r.ParseForm(); err == nil {
+			if r.FormValue("token") == "" || r.FormValue("channel") == "" || r.FormValue("thread_ts") == "" {
+				w.WriteHeader(http.StatusBadRequest)
+				streamResp := StreamResponse{Ok: false, Error: "missing_required_field"}
+				json.NewEncoder(w).Encode(streamResp)
+				return
+			}
+		}
+
+		streamResp := StreamResponse{
+			Ok:      true,
+			StreamID: "test-stream-id-123",
+		}
+		json.NewEncoder(w).Encode(streamResp)
+	}))
+	defer mockServer.Close()
+
+	originalBaseURL := slackAPIBaseURL
+	slackAPIBaseURL = mockServer.URL
+	defer func() { slackAPIBaseURL = originalBaseURL }()
+
+	streamID, err := startChatStream("test-token", "C123", "U123", "T123")
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	if streamID != "test-stream-id-123" {
+		t.Errorf("Expected stream ID 'test-stream-id-123', got %q", streamID)
+	}
+}
+
 func TestStartChatStream_NetworkError(t *testing.T) {
 	originalBaseURL := slackAPIBaseURL
 	slackAPIBaseURL = "http://localhost:0" // Invalid port
@@ -244,6 +384,15 @@ func TestAppendToStream(t *testing.T) {
 	var appendedContent []string
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/chat.appendStream" {
+			// Validate Authorization header
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+				w.WriteHeader(http.StatusUnauthorized)
+				streamResp := StreamResponse{Ok: false, Error: "invalid_auth"}
+				json.NewEncoder(w).Encode(streamResp)
+				return
+			}
+
 			r.ParseForm()
 			appendedContent = append(appendedContent, r.FormValue("content"))
 		}
@@ -277,7 +426,24 @@ func TestStopChatStream(t *testing.T) {
 	var stoppedStreamID string
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/chat.stopStream" {
+			// Validate Authorization header
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+				w.WriteHeader(http.StatusUnauthorized)
+				streamResp := StreamResponse{Ok: false, Error: "invalid_auth"}
+				json.NewEncoder(w).Encode(streamResp)
+				return
+			}
+
+			// Validate token is NOT in form data
 			r.ParseForm()
+			if r.FormValue("token") != "" {
+				w.WriteHeader(http.StatusBadRequest)
+				streamResp := StreamResponse{Ok: false, Error: "token should not be in form data"}
+				json.NewEncoder(w).Encode(streamResp)
+				return
+			}
+
 			stoppedStreamID = r.FormValue("stream_id")
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -303,6 +469,16 @@ func TestHandleCommandExecution_SimpleCommand(t *testing.T) {
 
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		
+		// Validate Authorization header for all endpoints
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			w.WriteHeader(http.StatusUnauthorized)
+			streamResp := StreamResponse{Ok: false, Error: "invalid_auth"}
+			json.NewEncoder(w).Encode(streamResp)
+			return
+		}
+
 		var streamResp StreamResponse
 
 		switch r.URL.Path {
@@ -314,8 +490,14 @@ func TestHandleCommandExecution_SimpleCommand(t *testing.T) {
 		case "/chat.appendStream":
 			streamOperations = append(streamOperations, "append")
 			r.ParseForm()
-			streamContents = append(streamContents, r.FormValue("content"))
-			streamResp.Ok = true
+			// Verify token is NOT in form data
+			if r.FormValue("token") != "" {
+				streamResp.Ok = false
+				streamResp.Error = "token should not be in form data"
+			} else {
+				streamContents = append(streamContents, r.FormValue("content"))
+				streamResp.Ok = true
+			}
 
 		case "/chat.stopStream":
 			streamOperations = append(streamOperations, "stop")
@@ -331,7 +513,7 @@ func TestHandleCommandExecution_SimpleCommand(t *testing.T) {
 	defer func() { slackAPIBaseURL = originalBaseURL }()
 
 	// Execute a simple command that completes quickly
-	handleCommandExecution("test-token", "C123", "trigger-123", "echo 'test output'")
+	handleCommandExecution("test-token", "C123", "U123", "T123", "", "echo 'test output'")
 
 	// Wait for command to complete
 	time.Sleep(2 * time.Second)
@@ -389,12 +571,25 @@ func TestHandleCommandExecution_CommandWithOutput(t *testing.T) {
 
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		
+		// Validate Authorization header
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			w.WriteHeader(http.StatusUnauthorized)
+			streamResp := StreamResponse{Ok: false, Error: "invalid_auth"}
+			json.NewEncoder(w).Encode(streamResp)
+			return
+		}
+
 		var streamResp StreamResponse
 		streamResp.Ok = true
 
 		if r.URL.Path == "/chat.appendStream" {
 			r.ParseForm()
-			appendedContents = append(appendedContents, r.FormValue("content"))
+			// Verify token is NOT in form data
+			if r.FormValue("token") == "" {
+				appendedContents = append(appendedContents, r.FormValue("content"))
+			}
 		} else if r.URL.Path == "/chat.startStream" {
 			streamResp.StreamID = "test-stream"
 		}
@@ -408,7 +603,7 @@ func TestHandleCommandExecution_CommandWithOutput(t *testing.T) {
 	defer func() { slackAPIBaseURL = originalBaseURL }()
 
 	// Execute command with output
-	handleCommandExecution("test-token", "C123", "trigger-123", "echo 'hello world'")
+	handleCommandExecution("test-token", "C123", "U123", "T123", "", "echo 'hello world'")
 
 	// Wait for command to complete and at least one append
 	time.Sleep(1500 * time.Millisecond)
@@ -435,7 +630,7 @@ func TestHandleCommandExecution_CommandError(t *testing.T) {
 	defer func() { slackAPIBaseURL = originalBaseURL }()
 
 	// Execute a command that will fail
-	handleCommandExecution("test-token", "C123", "trigger-123", "nonexistent-command-xyz123")
+	handleCommandExecution("test-token", "C123", "U123", "T123", "", "nonexistent-command-xyz123")
 
 	// Wait for command to complete
 	time.Sleep(2 * time.Second)
@@ -445,6 +640,16 @@ func TestHandleCommandExecution_StreamStartFailure(t *testing.T) {
 	// Mock server that returns error on startStream
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		
+		// Validate Authorization header even on error
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			w.WriteHeader(http.StatusUnauthorized)
+			streamResp := StreamResponse{Ok: false, Error: "invalid_auth"}
+			json.NewEncoder(w).Encode(streamResp)
+			return
+		}
+
 		if r.URL.Path == "/chat.startStream" {
 			streamResp := StreamResponse{
 				Ok:    false,
@@ -460,7 +665,7 @@ func TestHandleCommandExecution_StreamStartFailure(t *testing.T) {
 	defer func() { slackAPIBaseURL = originalBaseURL }()
 
 	// This should fail gracefully without crashing
-	handleCommandExecution("test-token", "C123", "invalid-trigger", "echo test")
+	handleCommandExecution("test-token", "C123", "U123", "T123", "", "echo test")
 	time.Sleep(100 * time.Millisecond)
 }
 

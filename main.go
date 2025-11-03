@@ -47,10 +47,12 @@ func main() {
 		}
 
 		text := r.FormValue("text")
-		triggerID := r.FormValue("trigger_id")
 		channelID := r.FormValue("channel_id")
+		userID := r.FormValue("user_id")
+		teamID := r.FormValue("team_id")
+		responseURL := r.FormValue("response_url")
 
-		if text == "" || triggerID == "" || channelID == "" {
+		if text == "" || channelID == "" || userID == "" {
 			http.Error(w, "Missing required fields", http.StatusBadRequest)
 			return
 		}
@@ -63,7 +65,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 
 		// Spawn goroutine to handle command execution and streaming
-		go handleCommandExecution(slackToken, channelID, triggerID, command)
+		go handleCommandExecution(slackToken, channelID, userID, teamID, responseURL, command)
 	})
 
 	fmt.Printf("Starting server on port %s\n", port)
@@ -73,9 +75,9 @@ func main() {
 	}
 }
 
-func handleCommandExecution(token, channelID, triggerID, command string) {
+func handleCommandExecution(token, channelID, userID, teamID, responseURL, command string) {
 	// Start chat stream
-	streamID, err := startChatStream(token, channelID, triggerID)
+	streamID, err := startChatStream(token, channelID, userID, teamID)
 	if err != nil {
 		fmt.Printf("Error starting chat stream: %v\n", err)
 		return
@@ -218,10 +220,26 @@ func handleCommandExecution(token, channelID, triggerID, command string) {
 	}
 }
 
-func startChatStream(token, channelID, triggerID string) (string, error) {
+func startChatStream(token, channelID, userID, teamID string) (string, error) {
 	data := url.Values{}
+	data.Set("token", token)
 	data.Set("channel", channelID)
-	data.Set("trigger_id", triggerID)
+	
+	// thread_ts is required - use current timestamp to create a new thread
+	// For slash commands, this will start a new thread/reply
+	threadTS := fmt.Sprintf("%d", time.Now().Unix())
+	data.Set("thread_ts", threadTS)
+
+	// recipient_user_id and recipient_team_id are required when streaming to channels
+	// Channels start with 'C', DMs start with 'D', groups start with 'G'
+	if strings.HasPrefix(channelID, "C") || strings.HasPrefix(channelID, "G") {
+		if userID != "" {
+			data.Set("recipient_user_id", userID)
+		}
+		if teamID != "" {
+			data.Set("recipient_team_id", teamID)
+		}
+	}
 
 	req, err := http.NewRequest("POST", slackAPIBaseURL+"/chat.startStream", strings.NewReader(data.Encode()))
 	if err != nil {
