@@ -89,7 +89,7 @@ func executeCommand(command string) string {
 		result.Write(stderr.Bytes())
 	}
 	result.WriteString("```\n\n")
-	result.WriteString(fmt.Sprintf("**Process completed**\n- Exit code: %d\n- Execution time: %v\n", exitCode, duration))
+	result.WriteString(fmt.Sprintf("Process completed\n_Exit code: %d | Execution time: %.2fms_\n", exitCode, float64(duration.Nanoseconds())/1e6))
 
 	return result.String()
 }
