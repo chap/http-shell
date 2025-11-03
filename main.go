@@ -36,12 +36,12 @@ func main() {
 			return
 		}
 
-		// Strip leading '$' from text
+		// Strip leading '$' from text for execution
 		command := strings.TrimPrefix(text, "$")
 		command = strings.TrimSpace(command)
 
-		// Execute command synchronously and return result
-		result := executeCommand(command)
+		// Execute command synchronously and return result (pass original text for display)
+		result := executeCommand(command, text)
 
 		// Create JSON response
 		response := map[string]string{
@@ -62,7 +62,7 @@ func main() {
 	}
 }
 
-func executeCommand(command string) string {
+func executeCommand(command, originalText string) string {
 	startTime := time.Now()
 
 	// Execute command
@@ -89,6 +89,8 @@ func executeCommand(command string) string {
 
 	// Prepare output
 	var result bytes.Buffer
+	result.WriteString(originalText)
+	result.WriteString("\n\n")
 	result.WriteString("```\n")
 	result.Write(stdout.Bytes())
 	if stderr.Len() > 0 {
@@ -96,7 +98,7 @@ func executeCommand(command string) string {
 		result.Write(stderr.Bytes())
 	}
 	result.WriteString("```\n\n")
-	result.WriteString(fmt.Sprintf("exit: %d | %.2fms\n", exitCode, float64(duration.Nanoseconds())/1e6))
+	result.WriteString(fmt.Sprintf("_%.2fms %dexit_\n", float64(duration.Nanoseconds())/1e6, exitCode))
 
 	return result.String()
 }

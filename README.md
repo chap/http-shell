@@ -6,7 +6,7 @@ This Go web app receives an HTTP POST request on `$PORT` that is encoded `applic
 
 The server expects a POST request with form-encoded data containing at minimum a `text` field:
 
-```
+```g
 # application/x-www-form-urlencoded
 text=$ date
 ```
@@ -28,7 +28,7 @@ Example response:
 ```json
 {
     "response_type": "in_channel",
-    "text": "```\noutput from command\n```\n\nexit: 0 | 1.63ms\n"
+    "text": "$ echo 'hi'\n\n```\nhi\n```\n\n_1.63ms 0exit_\n"
 }
 ```
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -107,32 +108,49 @@ func TestHandler_ValidRequest(t *testing.T) {
 		command := strings.TrimPrefix(text, "$")
 		command = strings.TrimSpace(command)
 
-		result := executeCommand(command)
+		result := executeCommand(command, text)
 
-		w.Header().Set("Content-Type", "text/plain")
+		// Create JSON response
+		response := map[string]string{
+			"response_type": "in_channel",
+			"text":          result,
+		}
+
+		// Return JSON response
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(result))
+		json.NewEncoder(w).Encode(response)
 	})(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("Expected status %d, got %d", http.StatusOK, w.Code)
 	}
 
-	body := w.Body.String()
-	if body == "" {
-		t.Error("Expected non-empty response body")
+	// Parse JSON response
+	var response map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("Failed to parse JSON response: %v", err)
 	}
 
-	if !strings.Contains(body, "hello") {
-		t.Errorf("Expected response to contain 'hello', got %q", body)
+	if response["response_type"] != "in_channel" {
+		t.Errorf("Expected response_type 'in_channel', got %q", response["response_type"])
 	}
 
-	if !strings.Contains(body, "Process completed") {
-		t.Errorf("Expected response to contain 'Process completed', got %q", body)
+	text := response["text"]
+	if text == "" {
+		t.Error("Expected non-empty text field")
 	}
 
-	if !strings.Contains(body, "Exit code") {
-		t.Errorf("Expected response to contain 'Exit code', got %q", body)
+	if !strings.Contains(text, "$ echo hello") {
+		t.Errorf("Expected text to contain original command '$ echo hello', got %q", text)
+	}
+
+	if !strings.Contains(text, "hello") {
+		t.Errorf("Expected text to contain 'hello', got %q", text)
+	}
+
+	if !strings.Contains(text, "0exit") {
+		t.Errorf("Expected text to contain '0exit', got %q", text)
 	}
 }
 
@@ -180,7 +198,7 @@ func TestHandler_StripDollarPrefix(t *testing.T) {
 				command = strings.TrimSpace(command)
 				executedCommand = command
 
-				w.Header().Set("Content-Type", "text/plain")
+				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
 			})(w, req)
 
@@ -192,7 +210,12 @@ func TestHandler_StripDollarPrefix(t *testing.T) {
 }
 
 func TestExecuteCommand_SimpleCommand(t *testing.T) {
-	result := executeCommand("echo 'test output'")
+	originalText := "$ echo 'test output'"
+	result := executeCommand("echo 'test output'", originalText)
+
+	if !strings.Contains(result, originalText) {
+		t.Errorf("Expected result to contain original command %q, got %q", originalText, result)
+	}
 
 	if !strings.Contains(result, "test output") {
 		t.Errorf("Expected result to contain 'test output', got %q", result)
@@ -202,17 +225,18 @@ func TestExecuteCommand_SimpleCommand(t *testing.T) {
 		t.Errorf("Expected result to contain code block markers, got %q", result)
 	}
 
-	if !strings.Contains(result, "Process completed") {
-		t.Errorf("Expected result to contain 'Process completed', got %q", result)
+	if !strings.Contains(result, "0exit") {
+		t.Errorf("Expected result to contain '0exit', got %q", result)
 	}
 
-	if !strings.Contains(result, "Exit code: 0") {
-		t.Errorf("Expected result to contain 'Exit code: 0', got %q", result)
+	if !strings.Contains(result, "ms") {
+		t.Errorf("Expected result to contain execution time with 'ms', got %q", result)
 	}
 }
 
 func TestExecuteCommand_CommandWithStderr(t *testing.T) {
-	result := executeCommand("echo 'stdout' && echo 'stderr' >&2")
+	originalText := "$ echo 'stdout' && echo 'stderr' >&2"
+	result := executeCommand("echo 'stdout' && echo 'stderr' >&2", originalText)
 
 	if !strings.Contains(result, "stdout") {
 		t.Errorf("Expected result to contain 'stdout', got %q", result)
@@ -228,34 +252,38 @@ func TestExecuteCommand_CommandWithStderr(t *testing.T) {
 }
 
 func TestExecuteCommand_CommandError(t *testing.T) {
-	result := executeCommand("false")
+	originalText := "$ false"
+	result := executeCommand("false", originalText)
 
-	if !strings.Contains(result, "Exit code: 1") {
-		t.Errorf("Expected result to contain 'Exit code: 1', got %q", result)
-	}
-
-	if !strings.Contains(result, "Process completed") {
-		t.Errorf("Expected result to contain 'Process completed', got %q", result)
+	if !strings.Contains(result, "1exit") {
+		t.Errorf("Expected result to contain '1exit', got %q", result)
 	}
 }
 
 func TestExecuteCommand_NonexistentCommand(t *testing.T) {
-	result := executeCommand("nonexistent-command-xyz123")
-
-	if !strings.Contains(result, "Process completed") {
-		t.Errorf("Expected result to contain 'Process completed', got %q", result)
-	}
+	originalText := "$ nonexistent-command-xyz123"
+	result := executeCommand("nonexistent-command-xyz123", originalText)
 
 	// Should have a non-zero exit code
-	if strings.Contains(result, "Exit code: 0") {
+	if strings.Contains(result, "0exit") {
 		t.Errorf("Expected non-zero exit code for nonexistent command, got %q", result)
+	}
+
+	if !strings.Contains(result, "exit") {
+		t.Errorf("Expected result to contain exit code format, got %q", result)
 	}
 }
 
 func TestExecuteCommand_ExecutionTime(t *testing.T) {
-	result := executeCommand("sleep 0.1")
+	originalText := "$ sleep 0.1"
+	result := executeCommand("sleep 0.1", originalText)
 
-	if !strings.Contains(result, "Execution time") {
-		t.Errorf("Expected result to contain 'Execution time', got %q", result)
+	if !strings.Contains(result, "ms") {
+		t.Errorf("Expected result to contain execution time with 'ms', got %q", result)
+	}
+
+	// Should contain the time in the format "_X.XXms Xexit"
+	if !strings.Contains(result, "_") {
+		t.Errorf("Expected result to contain '_' prefix for time, got %q", result)
 	}
 }
