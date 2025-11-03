@@ -220,7 +220,6 @@ func handleCommandExecution(token, channelID, triggerID, command string) {
 
 func startChatStream(token, channelID, triggerID string) (string, error) {
 	data := url.Values{}
-	data.Set("token", token)
 	data.Set("channel", channelID)
 	data.Set("trigger_id", triggerID)
 
@@ -253,7 +252,6 @@ func startChatStream(token, channelID, triggerID string) (string, error) {
 
 func appendToStream(token, streamID, content string) {
 	data := url.Values{}
-	data.Set("token", token)
 	data.Set("stream_id", streamID)
 	data.Set("content", content)
 
@@ -287,7 +285,6 @@ func appendToStream(token, streamID, content string) {
 
 func stopChatStream(token, streamID string) {
 	data := url.Values{}
-	data.Set("token", token)
 	data.Set("stream_id", streamID)
 
 	req, err := http.NewRequest("POST", slackAPIBaseURL+"/chat.stopStream", strings.NewReader(data.Encode()))

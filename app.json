@@ -9,5 +9,5 @@
   "kind": "app",
   "name": "chap-http-shell",
   "repo": "https://github.com/chap/canary",
-  "stack": "heroku-24",
+  "stack": "heroku-24"
 }
