@@ -106,20 +106,20 @@ func handleCommandExecution(token, channelID, userID, teamID, responseURL, comma
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		fmt.Printf("Error creating stdout pipe: %v\n", err)
-		stopChatStream(token, streamID)
+		stopChatStream(token, channelID, threadTS)
 		return
 	}
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		fmt.Printf("Error creating stderr pipe: %v\n", err)
-		stopChatStream(token, streamID)
+		stopChatStream(token, channelID, threadTS)
 		return
 	}
 
 	if err := cmd.Start(); err != nil {
-		appendToStream(token, streamID, fmt.Sprintf("Error starting command: %v\n", err))
-		stopChatStream(token, streamID)
+		appendToStream(token, channelID, threadTS, fmt.Sprintf("Error starting command: %v\n", err))
+		stopChatStream(token, channelID, threadTS)
 		return
 	}
 
@@ -185,7 +185,7 @@ func handleCommandExecution(token, channelID, userID, teamID, responseURL, comma
 			if outputBuf.Len() > lastSentLen {
 				newOutput := outputBuf.Bytes()[lastSentLen:]
 				if len(newOutput) > 0 {
-					appendToStream(token, streamID, string(newOutput))
+					appendToStream(token, channelID, threadTS, string(newOutput))
 					lastSentLen = outputBuf.Len()
 				}
 			}
@@ -210,7 +210,7 @@ func handleCommandExecution(token, channelID, userID, teamID, responseURL, comma
 			if outputBuf.Len() > lastSentLen {
 				remainingOutput := outputBuf.Bytes()[lastSentLen:]
 				if len(remainingOutput) > 0 {
-					appendToStream(token, streamID, string(remainingOutput))
+					appendToStream(token, channelID, threadTS, string(remainingOutput))
 				}
 			}
 
@@ -227,10 +227,10 @@ func handleCommandExecution(token, channelID, userID, teamID, responseURL, comma
 
 			// Append debugging information
 			debugInfo := fmt.Sprintf("```\n\n**Process completed**\n- Exit code: %d\n- Execution time: %v\n", exitCode, duration)
-			appendToStream(token, streamID, debugInfo)
+			appendToStream(token, channelID, threadTS, debugInfo)
 
 			// Stop the stream
-			stopChatStream(token, streamID)
+			stopChatStream(token, channelID, threadTS)
 			return
 		}
 	}
@@ -323,11 +323,12 @@ func startChatStream(token, channelID, userID, teamID, threadTS string) (string,
 	return streamResp.StreamID, nil
 }
 
-func appendToStream(token, streamID, content string) {
+func appendToStream(token, channelID, ts, markdownText string) {
 	data := url.Values{}
 	data.Set("token", token)
-	data.Set("stream_id", streamID)
-	data.Set("content", content)
+	data.Set("channel", channelID)
+	data.Set("ts", ts)
+	data.Set("markdown_text", markdownText)
 
 	req, err := http.NewRequest("POST", slackAPIBaseURL+"/chat.appendStream", strings.NewReader(data.Encode()))
 	if err != nil {
@@ -357,10 +358,11 @@ func appendToStream(token, streamID, content string) {
 	}
 }
 
-func stopChatStream(token, streamID string) {
+func stopChatStream(token, channelID, ts string) {
 	data := url.Values{}
 	data.Set("token", token)
-	data.Set("stream_id", streamID)
+	data.Set("channel", channelID)
+	data.Set("ts", ts)
 
 	req, err := http.NewRequest("POST", slackAPIBaseURL+"/chat.stopStream", strings.NewReader(data.Encode()))
 	if err != nil {

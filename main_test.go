@@ -406,7 +406,7 @@ func TestAppendToStream(t *testing.T) {
 			}
 
 			r.ParseForm()
-			appendedContent = append(appendedContent, r.FormValue("content"))
+			appendedContent = append(appendedContent, r.FormValue("markdown_text"))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		streamResp := StreamResponse{Ok: true}
@@ -418,8 +418,8 @@ func TestAppendToStream(t *testing.T) {
 	slackAPIBaseURL = mockServer.URL
 	defer func() { slackAPIBaseURL = originalBaseURL }()
 
-	appendToStream("test-token", "stream-123", "test content")
-	appendToStream("test-token", "stream-123", "more content")
+	appendToStream("test-token", "C123", "1234567890.123456", "test content")
+	appendToStream("test-token", "C123", "1234567890.123456", "more content")
 
 	if len(appendedContent) != 2 {
 		t.Fatalf("Expected 2 appends, got %d", len(appendedContent))
@@ -448,7 +448,7 @@ func TestStopChatStream(t *testing.T) {
 			}
 
 			r.ParseForm()
-			stoppedStreamID = r.FormValue("stream_id")
+			stoppedStreamID = r.FormValue("ts")
 		}
 		w.Header().Set("Content-Type", "application/json")
 		streamResp := StreamResponse{Ok: true}
@@ -460,10 +460,10 @@ func TestStopChatStream(t *testing.T) {
 	slackAPIBaseURL = mockServer.URL
 	defer func() { slackAPIBaseURL = originalBaseURL }()
 
-	stopChatStream("test-token", "stream-456")
+	stopChatStream("test-token", "C123", "1234567890.123456")
 
-	if stoppedStreamID != "stream-456" {
-		t.Errorf("Expected stream ID 'stream-456', got %q", stoppedStreamID)
+	if stoppedStreamID != "1234567890.123456" {
+		t.Errorf("Expected timestamp '1234567890.123456', got %q", stoppedStreamID)
 	}
 }
 
@@ -504,7 +504,7 @@ func TestHandleCommandExecution_SimpleCommand(t *testing.T) {
 		case "/chat.appendStream":
 			streamOperations = append(streamOperations, "append")
 			r.ParseForm()
-			streamContents = append(streamContents, r.FormValue("content"))
+			streamContents = append(streamContents, r.FormValue("markdown_text"))
 			streamResp.Ok = true
 
 		case "/chat.stopStream":
@@ -603,7 +603,7 @@ func TestHandleCommandExecution_CommandWithOutput(t *testing.T) {
 			return
 		} else if r.URL.Path == "/chat.appendStream" {
 			r.ParseForm()
-			appendedContents = append(appendedContents, r.FormValue("content"))
+			appendedContents = append(appendedContents, r.FormValue("markdown_text"))
 		} else if r.URL.Path == "/chat.startStream" {
 			streamResp.StreamID = "test-stream"
 		}
