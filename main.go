@@ -47,7 +47,7 @@ func main() {
 		response := map[string]string{
 			"response_type": "in_channel",
 			"text":          result,
-			"parse":         "none"
+			"parse":         "none",
 		}
 
 		// Return JSON response
@@ -106,11 +106,6 @@ func executeCommand(command, originalText string) string {
 	// Calculate execution time
 	duration := time.Since(startTime)
 
-	// Prepare output - all inside code block
-	var result bytes.Buffer
-	result.WriteString("```\n")
-	result.WriteString(originalText)
-
 	// Combine stdout and stderr
 	var combinedOutput bytes.Buffer
 	combinedOutput.Write(stdout.Bytes())
@@ -137,6 +132,20 @@ func executeCommand(command, originalText string) string {
 	for len(cleanedLines) > 0 && strings.TrimSpace(cleanedLines[len(cleanedLines)-1]) == "" {
 		cleanedLines = cleanedLines[:len(cleanedLines)-1]
 	}
+
+	// Ensure we never create an empty code block
+	// Check if we have any actual content (originalText should always have content, but be safe)
+	hasContent := strings.TrimSpace(originalText) != "" || len(cleanedLines) > 0
+
+	if !hasContent {
+		// If no content, return just the status without code block
+		return fmt.Sprintf("%s %.2fms", translateExitCode(exitCode), float64(duration.Nanoseconds())/1e6)
+	}
+
+	// Prepare output - all inside code block
+	var result bytes.Buffer
+	result.WriteString("```\n")
+	result.WriteString(originalText)
 
 	// Write cleaned output
 	if len(cleanedLines) > 0 {

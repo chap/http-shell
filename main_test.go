@@ -291,3 +291,45 @@ func TestExecuteCommand_ExecutionTime(t *testing.T) {
 		t.Errorf("Expected result to contain separator '---', got %q", result)
 	}
 }
+
+func TestExecuteCommand_NoEmptyCodeBlock(t *testing.T) {
+	// Test that empty code blocks are not created when there's no content
+	// This tests the edge case where originalText is empty/whitespace and no output
+	result := executeCommand("true", "")
+
+	// Should not contain empty code block markers
+	if strings.Contains(result, "```\n```") {
+		t.Errorf("Expected result to not contain empty code block, got %q", result)
+	}
+
+	// Should contain status information
+	if !strings.Contains(result, "ms") {
+		t.Errorf("Expected result to contain execution time with 'ms', got %q", result)
+	}
+
+	// If there's no content, should return just status without code block
+	if strings.Contains(result, "```") && strings.TrimSpace(strings.TrimPrefix(strings.TrimSuffix(result, "```"), "```")) == "" {
+		t.Errorf("Expected result to not be an empty code block, got %q", result)
+	}
+}
+
+func TestExecuteCommand_EmptyOutputPreservesCodeBlock(t *testing.T) {
+	// Test that commands with empty output still create a code block with the command
+	originalText := "$ true"
+	result := executeCommand("true", originalText)
+
+	// Should contain code block markers
+	if !strings.Contains(result, "```") {
+		t.Errorf("Expected result to contain code block markers, got %q", result)
+	}
+
+	// Should contain the original command
+	if !strings.Contains(result, originalText) {
+		t.Errorf("Expected result to contain original command %q, got %q", originalText, result)
+	}
+
+	// Should not be an empty code block
+	if strings.Contains(result, "```\n```") {
+		t.Errorf("Expected result to not be an empty code block, got %q", result)
+	}
+}
