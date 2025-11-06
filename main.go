@@ -46,8 +46,7 @@ func main() {
 		// Create JSON response
 		response := map[string]string{
 			"response_type": "in_channel",
-			"text":          result,
-			"parse":         "none",
+			"text":          result
 		}
 
 		// Return JSON response
