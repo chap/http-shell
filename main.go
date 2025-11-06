@@ -47,6 +47,7 @@ func main() {
 		response := map[string]string{
 			"response_type": "in_channel",
 			"text":          result,
+			"parse":         "none"
 		}
 
 		// Return JSON response
@@ -109,23 +110,41 @@ func executeCommand(command, originalText string) string {
 	var result bytes.Buffer
 	result.WriteString("```\n")
 	result.WriteString(originalText)
-	result.WriteString("\n")
 
-	// Write stdout
-	result.Write(stdout.Bytes())
-
-	// Write stderr the same way (no special separator)
+	// Combine stdout and stderr
+	var combinedOutput bytes.Buffer
+	combinedOutput.Write(stdout.Bytes())
 	if stderr.Len() > 0 {
-		result.Write(stderr.Bytes())
+		combinedOutput.Write(stderr.Bytes())
 	}
 
-	// Remove trailing newline from output if present, then add separator and status
-	outputBytes := result.Bytes()
-	if len(outputBytes) > 0 && outputBytes[len(outputBytes)-1] == '\n' {
-		result.Reset()
-		result.Write(outputBytes[:len(outputBytes)-1])
+	// Clean up the output: remove "--- stderr ---" lines and trim blank lines
+	outputLines := strings.Split(combinedOutput.String(), "\n")
+	var cleanedLines []string
+	for _, line := range outputLines {
+		trimmed := strings.TrimSpace(line)
+		// Skip "--- stderr ---" lines (case insensitive, with optional whitespace)
+		if strings.EqualFold(trimmed, "--- stderr ---") {
+			continue
+		}
+		cleanedLines = append(cleanedLines, line)
 	}
 
+	// Remove leading and trailing blank lines
+	for len(cleanedLines) > 0 && strings.TrimSpace(cleanedLines[0]) == "" {
+		cleanedLines = cleanedLines[1:]
+	}
+	for len(cleanedLines) > 0 && strings.TrimSpace(cleanedLines[len(cleanedLines)-1]) == "" {
+		cleanedLines = cleanedLines[:len(cleanedLines)-1]
+	}
+
+	// Write cleaned output
+	if len(cleanedLines) > 0 {
+		result.WriteString("\n")
+		result.WriteString(strings.Join(cleanedLines, "\n"))
+	}
+
+	// Add separator and status
 	result.WriteString("\n---\n")
 	result.WriteString(fmt.Sprintf("%s %.2fms\n", translateExitCode(exitCode), float64(duration.Nanoseconds())/1e6))
 	result.WriteString("```\n")
