@@ -144,7 +144,7 @@ func executeCommand(command, originalText string) string {
 
 	// Prepare output - all inside code block
 	var result bytes.Buffer
-	result.WriteString("```\n")
+	result.WriteString("```")
 	result.WriteString(originalText)
 
 	// Write cleaned output
@@ -155,7 +155,7 @@ func executeCommand(command, originalText string) string {
 
 	// Add separator and status
 	result.WriteString("\n---\n")
-	result.WriteString(fmt.Sprintf("%s %.2fms\n", translateExitCode(exitCode), float64(duration.Nanoseconds())/1e6))
+	result.WriteString(fmt.Sprintf("%s %.2fms", translateExitCode(exitCode), float64(duration.Nanoseconds())/1e6))
 	result.WriteString("```\n")
 
 	return result.String()
