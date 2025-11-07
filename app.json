@@ -1,5 +1,26 @@
 {
+  "addons": [
+    {
+      "plan": "heroku-postgresql:essential-0"
+    },
+    {
+      "app": "chap-http-shell",
+      "as": "DATABASE",
+      "name": "DATABASE"
+    }
+  ],
   "apiVersion": "heroku.com/v1alpha1",
+  "buildpacks": [
+    {
+      "url": "heroku/go"
+    },
+    {
+      "url": "https://buildpack-registry.s3.amazonaws.com/buildpacks/heroku-community/cli.tgz"
+    },
+    {
+      "url": "https://manifests-buildpack-staging-d0d26bb94405.herokuapp.com/buildpack-v1alpha1.tg.gz"
+    }
+  ],
   "formation": {
     "web": {
       "quantity": 1,
@@ -8,6 +29,6 @@
   },
   "kind": "app",
   "name": "chap-http-shell",
-  "repo": "https://github.com/chap/canary",
+  "repo": "https://github.com/chap/http-shell",
   "stack": "heroku-24"
 }
