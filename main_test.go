@@ -246,8 +246,9 @@ func TestExecuteCommand_CommandWithStderr(t *testing.T) {
 		t.Errorf("Expected result to contain 'stderr', got %q", result)
 	}
 
-	if !strings.Contains(result, "---") {
-		t.Errorf("Expected result to contain separator '---', got %q", result)
+	// Status should be italicized and outside code block
+	if !strings.Contains(result, "_success") {
+		t.Errorf("Expected result to contain italicized status '_success', got %q", result)
 	}
 }
 
@@ -286,9 +287,9 @@ func TestExecuteCommand_ExecutionTime(t *testing.T) {
 		t.Errorf("Expected result to contain execution time with 'ms', got %q", result)
 	}
 
-	// Should contain the separator "---" before status
-	if !strings.Contains(result, "---") {
-		t.Errorf("Expected result to contain separator '---', got %q", result)
+	// Status should be italicized and outside code block
+	if !strings.Contains(result, "_success") {
+		t.Errorf("Expected result to contain italicized status '_success', got %q", result)
 	}
 }
 
