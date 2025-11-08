@@ -137,11 +137,11 @@ func executeCommand(command, originalText string) string {
 	hasContent := strings.TrimSpace(originalText) != "" || len(cleanedLines) > 0
 
 	if !hasContent {
-		// If no content, return just the status without code block
-		return fmt.Sprintf("%s %.2fms", translateExitCode(exitCode), float64(duration.Nanoseconds())/1e6)
+		// If no content, return just the status without code block, italicized
+		return fmt.Sprintf("_%s %.2fms_", translateExitCode(exitCode), float64(duration.Nanoseconds())/1e6)
 	}
 
-	// Prepare output - all inside code block
+	// Prepare output - code block with command and output
 	var result bytes.Buffer
 	result.WriteString("```")
 	result.WriteString(originalText)
@@ -152,10 +152,11 @@ func executeCommand(command, originalText string) string {
 		result.WriteString(strings.Join(cleanedLines, "\n"))
 	}
 
-	// Add separator and status
-	result.WriteString("\n---\n")
-	result.WriteString(fmt.Sprintf("%s %.2fms", translateExitCode(exitCode), float64(duration.Nanoseconds())/1e6))
-	result.WriteString("```\n")
+	// Close code block
+	result.WriteString("```\n\n")
+
+	// Add status outside code block, italicized
+	result.WriteString(fmt.Sprintf("_%s %.2fms_", translateExitCode(exitCode), float64(duration.Nanoseconds())/1e6))
 
 	return result.String()
 }
